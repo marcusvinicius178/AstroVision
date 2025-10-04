@@ -28,7 +28,10 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from utils_transforms import ColumnAligner
+try:
+    from .utils_transforms import ColumnAligner
+except ImportError:  # pragma: no cover - fallback for direct script execution
+    from utils_transforms import ColumnAligner
 
 
 def build_preprocessor(numeric_cols: Sequence[str], categorical_cols: Sequence[str]) -> ColumnTransformer:
