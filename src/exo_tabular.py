@@ -14,25 +14,46 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-import dataio
-from dataio import (
-    MissionDataset,
-    align_to_schema,
-    infer_feature_types,
-    load_cross_mission_split,
-    load_feature_schema,
-    load_mission_dataset,
-    save_feature_schema,
-)
-from modeling import (
-    build_pipeline,
-    evaluate_binary_classification,
-    fit_pipeline_with_fallback,
-    plot_confusion_matrix,
-    plot_pr_curve,
-    plot_roc_curve,
-    save_metrics,
-)
+if __package__ in (None, ""):
+    import dataio
+    from dataio import (
+        MissionDataset,
+        align_to_schema,
+        infer_feature_types,
+        load_cross_mission_split,
+        load_feature_schema,
+        load_mission_dataset,
+        save_feature_schema,
+    )
+    from modeling import (
+        build_pipeline,
+        evaluate_binary_classification,
+        fit_pipeline_with_fallback,
+        plot_confusion_matrix,
+        plot_pr_curve,
+        plot_roc_curve,
+        save_metrics,
+    )
+else:
+    from . import dataio
+    from .dataio import (
+        MissionDataset,
+        align_to_schema,
+        infer_feature_types,
+        load_cross_mission_split,
+        load_feature_schema,
+        load_mission_dataset,
+        save_feature_schema,
+    )
+    from .modeling import (
+        build_pipeline,
+        evaluate_binary_classification,
+        fit_pipeline_with_fallback,
+        plot_confusion_matrix,
+        plot_pr_curve,
+        plot_roc_curve,
+        save_metrics,
+    )
 
 DEFAULT_RANDOM_STATE = 42
 GROUP_KFOLD_SPLITS = 5

@@ -20,7 +20,10 @@ from typing import Dict, Iterable, List
 
 import pandas as pd
 
-from src.exo_tabular import predict_cross_mission, train_cross_mission
+if __package__ in (None, ""):
+    from exo_tabular import predict_cross_mission, train_cross_mission
+else:
+    from .exo_tabular import predict_cross_mission, train_cross_mission
 
 
 def parse_args(argv: Iterable[str]) -> argparse.Namespace:
