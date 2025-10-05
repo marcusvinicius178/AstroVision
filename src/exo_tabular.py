@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
@@ -73,8 +74,20 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--test-mission", choices=["tess", "kepler", "k2"], default="tess")
     parser.add_argument("--mission", choices=["kepler", "k2", "tess"], help="Mission for group-kfold mode")
     parser.add_argument("--ensemble", action="store_true", help="Enable stacking ensemble")
+    parser.add_argument("--oversample", action="store_true", help="Apply RandomOverSampler during training")
     parser.add_argument("--device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--random-state", type=int, default=DEFAULT_RANDOM_STATE)
+    parser.add_argument(
+        "--recall-target",
+        type=float,
+        default=0.6,
+        help="Recall target used to calibrate decision threshold",
+    )
+    parser.add_argument(
+        "--use-calibrated-buckets",
+        action="store_true",
+        help="When predicting, use the calibrated threshold for candidate bucket",
+    )
     return parser.parse_args(list(argv))
 
 
@@ -99,16 +112,39 @@ def log_feature_set(features: pd.DataFrame, logger: logging.Logger) -> None:
     logger.info("Feature columns: %s", columns)
 
 
-def assign_bucket(probabilities: np.ndarray) -> List[str]:
+def assign_bucket(probabilities: np.ndarray, *, thresholds: Optional[Dict[str, float]] = None) -> List[str]:
+    if thresholds is None:
+        thresholds = {"planet": 0.95, "candidate": 0.5}
+    planet_th = thresholds.get("planet", 0.95)
+    candidate_th = thresholds.get("candidate", 0.5)
     buckets: List[str] = []
     for value in probabilities:
-        if value >= 0.95:
+        if value >= planet_th:
             buckets.append("planet")
-        elif value >= 0.5:
+        elif value >= candidate_th:
             buckets.append("candidate")
         else:
             buckets.append("non-planet")
     return buckets
+
+
+def _load_calibrated_threshold(metrics_path: Path) -> Optional[float]:
+    if not metrics_path.exists():
+        return None
+    try:
+        data = json.loads(metrics_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    recommended = data.get("recommended_threshold")
+    if not isinstance(recommended, dict):
+        return None
+    value = recommended.get("threshold")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_artifact_paths(artifacts_dir: Path, mode_tag: str) -> Dict[str, Path]:
@@ -146,7 +182,9 @@ def _train_cross_mission_core(
     *,
     device: str,
     ensemble: bool,
+    oversample: bool,
     random_state: int,
+    recall_target: float,
     logger: logging.Logger,
 ) -> Path:
     train_dataset, test_dataset = load_cross_mission_split(test_mission, data_dir, logger)
@@ -166,15 +204,23 @@ def _train_cross_mission_core(
         ensemble=ensemble,
         logger=logger,
         random_state=random_state,
+        builder_kwargs={"oversample": oversample},
     )
     proba = pipeline.predict_proba(X_test)[:, 1]
-    metrics = evaluate_binary_classification(y_test, proba, thresholds=(0.5, 0.95))
+    metrics = evaluate_binary_classification(
+        y_test,
+        proba,
+        thresholds=(0.5, 0.95),
+        recall_target=recall_target,
+    )
     metrics["configuration"] = {
         "mode": "train",
         "split": "cross-mission",
         "test_mission": test_mission,
         "ensemble": ensemble,
         "device": device,
+        "oversample": oversample,
+        "recall_target": recall_target,
     }
     if "metrics" in artifacts:
         save_metrics(metrics, artifacts["metrics"])
@@ -203,7 +249,9 @@ def train_cross_mission(
     *,
     device: str = "cpu",
     ensemble: bool = False,
+    oversample: bool = False,
     random_state: int = DEFAULT_RANDOM_STATE,
+    recall_target: float = 0.6,
     logger: Optional[logging.Logger] = None,
 ) -> Path:
     logger = logger or logging.getLogger("exo_tabular")
@@ -215,7 +263,9 @@ def train_cross_mission(
         artifacts,
         device=device,
         ensemble=ensemble,
+        oversample=oversample,
         random_state=random_state,
+        recall_target=recall_target,
         logger=logger,
     )
 
@@ -316,9 +366,15 @@ def train_group_kfold(
             ensemble=args.ensemble,
             logger=logger,
             random_state=args.random_state + fold,
+            builder_kwargs={"oversample": args.oversample},
         )
         proba[val_idx] = fold_pipeline.predict_proba(X.iloc[val_idx])[:, 1]
-    metrics = evaluate_binary_classification(y, proba, thresholds=(0.5, 0.95))
+    metrics = evaluate_binary_classification(
+        y,
+        proba,
+        thresholds=(0.5, 0.95),
+        recall_target=args.recall_target,
+    )
     metrics["configuration"] = {
         "mode": "train",
         "split": args.split,
@@ -326,6 +382,8 @@ def train_group_kfold(
         "ensemble": args.ensemble,
         "device": args.device,
         "folds": GROUP_KFOLD_SPLITS,
+        "oversample": args.oversample,
+        "recall_target": args.recall_target,
     }
     save_metrics(metrics, artifacts["metrics"])
     plot_roc_curve(y, proba, artifacts["roc"])
@@ -341,6 +399,7 @@ def train_group_kfold(
         ensemble=args.ensemble,
         logger=logger,
         random_state=args.random_state,
+        builder_kwargs={"oversample": args.oversample},
     )
     joblib.dump(final_pipeline, artifacts["model"])
     save_feature_schema(X.columns, artifacts["schema"])
@@ -363,7 +422,25 @@ def predict_dataset(
             schema_path=schema_path,
             logger=logger,
         )
-        predictions["bucket"] = assign_bucket(predictions["proba_planet"].to_numpy())
+        thresholds = {"planet": 0.95, "candidate": 0.5}
+        if args.use_calibrated_buckets:
+            calibrated = _load_calibrated_threshold(artifacts["metrics"])
+            if calibrated is not None:
+                thresholds["candidate"] = calibrated
+                logger.info(
+                    "Using calibrated candidate threshold %.4f for mission %s",
+                    calibrated,
+                    args.test_mission,
+                )
+            else:
+                logger.warning(
+                    "Calibrated threshold requested but not found at %s",
+                    artifacts["metrics"],
+                )
+        predictions["bucket"] = assign_bucket(
+            predictions["proba_planet"].to_numpy(),
+            thresholds=thresholds,
+        )
     else:
         if not model_path.exists():
             raise FileNotFoundError(f"Trained model not found at {model_path}")
@@ -378,12 +455,27 @@ def predict_dataset(
         features = align_to_schema(target_dataset.features, schema)
         log_feature_set(features, logger)
         proba = pipeline.predict_proba(features)[:, 1]
+        thresholds = {"planet": 0.95, "candidate": 0.5}
+        if args.use_calibrated_buckets:
+            calibrated = _load_calibrated_threshold(artifacts["metrics"])
+            if calibrated is not None:
+                thresholds["candidate"] = calibrated
+                logger.info(
+                    "Using calibrated candidate threshold %.4f for mission %s",
+                    calibrated,
+                    args.mission,
+                )
+            else:
+                logger.warning(
+                    "Calibrated threshold requested but not found at %s",
+                    artifacts["metrics"],
+                )
         predictions = pd.DataFrame(
             {
                 "object_id": target_dataset.metadata["object_id"].values,
                 "mission": target_dataset.metadata["mission"].values,
                 "proba_planet": proba,
-                "bucket": assign_bucket(proba),
+                "bucket": assign_bucket(proba, thresholds=thresholds),
             }
         )
         for column in dataio.PHYSICAL_OUTPUT_COLUMNS:
@@ -414,7 +506,9 @@ def main(argv: Iterable[str]) -> None:
                 artifacts,
                 device=args.device,
                 ensemble=args.ensemble,
+                oversample=args.oversample,
                 random_state=args.random_state,
+                recall_target=args.recall_target,
                 logger=logger,
             )
         else:
