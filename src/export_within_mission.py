@@ -494,13 +494,25 @@ def process_mission(
     ):
         calibrated_value = float(recommended["threshold"])
         planet_threshold = thresholds.get("planet", 0.95)
-        thresholds["candidate"] = min(calibrated_value, planet_threshold)
-        logger.info(
-            "Using calibrated candidate threshold %.4f for mission %s (recall target %.2f)",
-            thresholds["candidate"],
-            mission,
-            args.recall_target,
-        )
+        if calibrated_value >= planet_threshold:
+            logger.warning(
+                (
+                    "Calibrated candidate threshold %.4f for mission %s is >= planet threshold %.2f; "
+                    "keeping candidate threshold %.2f"
+                ),
+                calibrated_value,
+                mission,
+                planet_threshold,
+                thresholds["candidate"],
+            )
+        else:
+            thresholds["candidate"] = calibrated_value
+            logger.info(
+                "Using calibrated candidate threshold %.4f for mission %s (recall target %.2f)",
+                thresholds["candidate"],
+                mission,
+                args.recall_target,
+            )
     elif recommended is None or not isinstance(recommended, dict):
         logger.warning("No calibrated threshold available for mission %s", mission)
     elif args.keep_default_thresholds:

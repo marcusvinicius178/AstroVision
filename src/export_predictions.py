@@ -187,12 +187,24 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             metrics_path = artifacts_dir / f"metrics_{mission}.json"
             calibrated = _load_calibrated_threshold(metrics_path)
             if calibrated is not None:
-                mission_thresholds["candidate"] = calibrated
-                logger.info(
-                    "Using calibrated candidate threshold %.4f for mission %s",
-                    calibrated,
-                    mission,
-                )
+                if calibrated >= mission_thresholds["planet"]:
+                    logger.warning(
+                        (
+                            "Calibrated candidate threshold %.4f for mission %s is >= planet "
+                            "threshold %.2f; keeping candidate threshold %.2f"
+                        ),
+                        calibrated,
+                        mission,
+                        mission_thresholds["planet"],
+                        mission_thresholds["candidate"],
+                    )
+                else:
+                    mission_thresholds["candidate"] = calibrated
+                    logger.info(
+                        "Using calibrated candidate threshold %.4f for mission %s",
+                        calibrated,
+                        mission,
+                    )
             else:
                 logger.warning(
                     "Calibrated threshold requested but metrics file missing or invalid at %s",

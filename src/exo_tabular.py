@@ -117,6 +117,8 @@ def assign_bucket(probabilities: np.ndarray, *, thresholds: Optional[Dict[str, f
         thresholds = {"planet": 0.95, "candidate": 0.5}
     planet_th = thresholds.get("planet", 0.95)
     candidate_th = thresholds.get("candidate", 0.5)
+    if candidate_th >= planet_th:
+        candidate_th = max(0.0, min(candidate_th, planet_th - 1e-6))
     buckets: List[str] = []
     for value in probabilities:
         if value >= planet_th:
@@ -426,12 +428,24 @@ def predict_dataset(
         if args.use_calibrated_buckets:
             calibrated = _load_calibrated_threshold(artifacts["metrics"])
             if calibrated is not None:
-                thresholds["candidate"] = calibrated
-                logger.info(
-                    "Using calibrated candidate threshold %.4f for mission %s",
-                    calibrated,
-                    args.test_mission,
-                )
+                if calibrated >= thresholds["planet"]:
+                    logger.warning(
+                        (
+                            "Calibrated candidate threshold %.4f for mission %s is >= planet "
+                            "threshold %.2f; keeping candidate threshold %.2f"
+                        ),
+                        calibrated,
+                        args.test_mission,
+                        thresholds["planet"],
+                        thresholds["candidate"],
+                    )
+                else:
+                    thresholds["candidate"] = calibrated
+                    logger.info(
+                        "Using calibrated candidate threshold %.4f for mission %s",
+                        calibrated,
+                        args.test_mission,
+                    )
             else:
                 logger.warning(
                     "Calibrated threshold requested but not found at %s",
@@ -459,12 +473,24 @@ def predict_dataset(
         if args.use_calibrated_buckets:
             calibrated = _load_calibrated_threshold(artifacts["metrics"])
             if calibrated is not None:
-                thresholds["candidate"] = calibrated
-                logger.info(
-                    "Using calibrated candidate threshold %.4f for mission %s",
-                    calibrated,
-                    args.mission,
-                )
+                if calibrated >= thresholds["planet"]:
+                    logger.warning(
+                        (
+                            "Calibrated candidate threshold %.4f for mission %s is >= planet "
+                            "threshold %.2f; keeping candidate threshold %.2f"
+                        ),
+                        calibrated,
+                        args.mission,
+                        thresholds["planet"],
+                        thresholds["candidate"],
+                    )
+                else:
+                    thresholds["candidate"] = calibrated
+                    logger.info(
+                        "Using calibrated candidate threshold %.4f for mission %s",
+                        calibrated,
+                        args.mission,
+                    )
             else:
                 logger.warning(
                     "Calibrated threshold requested but not found at %s",
