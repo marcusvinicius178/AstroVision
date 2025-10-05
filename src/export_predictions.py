@@ -14,9 +14,10 @@ Usage example::
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
@@ -38,6 +39,18 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--device", choices=["cpu", "gpu"], default="cpu")
     parser.add_argument("--ensemble", action="store_true", help="Enable ensemble training")
     parser.add_argument("--random-state", type=int, default=42)
+    parser.add_argument("--oversample", action="store_true", help="Apply RandomOverSampler during training")
+    parser.add_argument(
+        "--recall-target",
+        type=float,
+        default=0.6,
+        help="Recall target used to calibrate thresholds",
+    )
+    parser.add_argument(
+        "--use-calibrated-thresholds",
+        action="store_true",
+        help="Override candidate threshold with calibrated value saved in metrics",
+    )
     return parser.parse_args(list(argv))
 
 
@@ -90,6 +103,25 @@ def _write_summary(
     path.write_text("\n".join(lines))
 
 
+def _load_calibrated_threshold(metrics_path: Path) -> Optional[float]:
+    if not metrics_path.exists():
+        return None
+    try:
+        data = json.loads(metrics_path.read_text())
+    except json.JSONDecodeError:
+        return None
+    recommended = data.get("recommended_threshold")
+    if not isinstance(recommended, dict):
+        return None
+    value = recommended.get("threshold")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _prepare_predictions(
     mission: str,
     predictions: pd.DataFrame,
@@ -125,7 +157,7 @@ def run_cross_mission(args: argparse.Namespace) -> None:
     logger = logging.getLogger("export_predictions")
     data_dir = args.data_dir
     artifacts_dir = args.artifacts_dir
-    thresholds = {"planet": args.threshold_planet, "candidate": args.threshold_candidate}
+    base_thresholds = {"planet": args.threshold_planet, "candidate": args.threshold_candidate}
     missions = ["tess", "k2", "kepler"]
 
     for mission in missions:
@@ -136,7 +168,9 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             artifacts_dir,
             device=args.device,
             ensemble=args.ensemble,
+            oversample=args.oversample,
             random_state=args.random_state,
+            recall_target=args.recall_target,
             logger=logger,
         )
         logger.info("Predicting mission %s", mission)
@@ -148,7 +182,23 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             logger=logger,
         )
         _log_join_gaps(predictions, mission, logger)
-        prepared = _prepare_predictions(mission, predictions, thresholds)
+        mission_thresholds = dict(base_thresholds)
+        if args.use_calibrated_thresholds:
+            metrics_path = artifacts_dir / f"metrics_{mission}.json"
+            calibrated = _load_calibrated_threshold(metrics_path)
+            if calibrated is not None:
+                mission_thresholds["candidate"] = calibrated
+                logger.info(
+                    "Using calibrated candidate threshold %.4f for mission %s",
+                    calibrated,
+                    mission,
+                )
+            else:
+                logger.warning(
+                    "Calibrated threshold requested but metrics file missing or invalid at %s",
+                    metrics_path,
+                )
+        prepared = _prepare_predictions(mission, predictions, mission_thresholds)
         export_dir = artifacts_dir / "exports" / mission
         export_dir.mkdir(parents=True, exist_ok=True)
         ordered_columns = [
@@ -211,7 +261,7 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             _write_csv(subset_out, export_dir / filename)
 
         summary_path = export_dir / f"summary_{mission}.txt"
-        _write_summary(prepared, thresholds, summary_path)
+        _write_summary(prepared, mission_thresholds, summary_path)
         logger.info("Finished exports for mission %s", mission)
 
 
