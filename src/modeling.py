@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,6 +27,14 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.utils.class_weight import compute_sample_weight
+
+try:
+    from imblearn.over_sampling import RandomOverSampler
+    from imblearn.pipeline import Pipeline as ImbPipeline
+except ImportError:  # pragma: no cover - optional dependency for oversampling
+    RandomOverSampler = None
+    ImbPipeline = None
 
 try:
     from .utils_transforms import ColumnAligner
@@ -91,9 +99,14 @@ def build_pipeline(
     device: str = "cpu",
     ensemble: bool = False,
     random_state: int = 42,
+    oversample: bool = False,
 ) -> Pipeline:
     preprocessor = build_preprocessor(numeric_cols, categorical_cols)
     aligner = ColumnAligner()
+    if oversample and (RandomOverSampler is None or ImbPipeline is None):
+        raise ImportError(
+            "imbalanced-learn is required for oversampling. Install it with 'pip install imbalanced-learn'."
+        )
     if ensemble:
         lgbm = _instantiate_lgbm(device=device, random_state=random_state)
         rf = RandomForestClassifier(
@@ -129,13 +142,22 @@ def build_pipeline(
         model = stacking
     else:
         model = _instantiate_lgbm(device=device, random_state=random_state)
-    pipeline = Pipeline(
-        steps=[
-            ("align", aligner),
-            ("preprocess", preprocessor),
-            ("model", model),
-        ]
-    )
+    steps = [
+        ("align", aligner),
+        ("preprocess", preprocessor),
+    ]
+    if oversample:
+        steps.append(
+            (
+                "oversample",
+                RandomOverSampler(random_state=random_state),
+            )
+        )
+    steps.append(("model", model))
+    if oversample:
+        pipeline = ImbPipeline(steps=steps)
+    else:
+        pipeline = Pipeline(steps=steps)
     return pipeline
 
 
@@ -183,10 +205,21 @@ def fit_pipeline_with_fallback(
     ensemble: bool,
     logger: logging.Logger,
     random_state: int = 42,
+    builder_kwargs: Optional[Dict[str, object]] = None,
 ) -> Pipeline:
+    builder_kwargs = builder_kwargs or {}
+    sample_weights = compute_sample_weight("balanced", y_train)
     try:
-        pipeline = pipeline_builder(numeric_cols, categorical_cols, device=device, ensemble=ensemble, random_state=random_state)
-        pipeline.fit(X_train, y_train)
+        pipeline = pipeline_builder(
+            numeric_cols,
+            categorical_cols,
+            device=device,
+            ensemble=ensemble,
+            random_state=random_state,
+            **builder_kwargs,
+        )
+        pipeline.fit(X_train, y_train, model__sample_weight=sample_weights)
+        logger.info("Model fitted with balanced sample weights%s", " and oversampling" if builder_kwargs.get("oversample") else "")
         return pipeline
     except Exception as exc:  # noqa: BLE001
         if device == "gpu" and "gpu" in str(exc).lower():
@@ -197,8 +230,13 @@ def fit_pipeline_with_fallback(
                 device="cpu",
                 ensemble=ensemble,
                 random_state=random_state,
+                **builder_kwargs,
             )
-            pipeline.fit(X_train, y_train)
+            pipeline.fit(X_train, y_train, model__sample_weight=sample_weights)
+            logger.info(
+                "Model fitted on CPU with balanced sample weights%s after GPU fallback",
+                " and oversampling" if builder_kwargs.get("oversample") else "",
+            )
             return pipeline
         raise
 
@@ -207,6 +245,7 @@ def evaluate_binary_classification(
     y_true: Sequence[int],
     proba: Sequence[float],
     thresholds: Sequence[float] = (0.5, 0.95),
+    recall_target: Optional[float] = None,
 ) -> Dict[str, object]:
     y_true_arr = np.asarray(y_true)
     proba_arr = np.asarray(proba)
@@ -230,8 +269,42 @@ def evaluate_binary_classification(
             "recall": float(recall),
             "f1": float(f1),
             "predicted_positive": int(preds.sum()),
+            "threshold": float(threshold),
         }
+    recommended_info: Optional[Dict[str, float]] = None
+    if recall_target is not None:
+        positives = y_true_arr.sum()
+        if positives > 0:
+            order = np.argsort(proba_arr)[::-1]
+            sorted_true = y_true_arr[order]
+            sorted_proba = proba_arr[order]
+            tp_cumsum = np.cumsum(sorted_true)
+            recall_curve = tp_cumsum / positives
+            idx = np.searchsorted(recall_curve, recall_target, side="left")
+            idx = min(idx, len(sorted_proba) - 1)
+            calibrated_threshold = sorted_proba[idx]
+            calibrated_preds = (proba_arr >= calibrated_threshold).astype(int)
+            precision_c, recall_c, f1_c, _ = precision_recall_fscore_support(
+                y_true_arr,
+                calibrated_preds,
+                beta=1.0,
+                average="binary",
+                zero_division=0,
+            )
+            recommended_info = {
+                "threshold": float(calibrated_threshold),
+                "precision": float(precision_c),
+                "recall": float(recall_c),
+                "f1": float(f1_c),
+                "predicted_positive": int(calibrated_preds.sum()),
+                "recall_target": float(recall_target),
+            }
+            threshold_metrics["calibrated"] = dict(recommended_info)
+        else:
+            recommended_info = None
     metrics["thresholds"] = threshold_metrics
+    if recommended_info is not None:
+        metrics["recommended_threshold"] = dict(recommended_info)
     cm = confusion_matrix(y_true_arr, (proba_arr >= 0.5).astype(int))
     metrics["confusion_matrix"] = {
         "tn": int(cm[0, 0]) if cm.shape == (2, 2) else 0,
