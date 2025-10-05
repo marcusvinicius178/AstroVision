@@ -1,0 +1,39 @@
+Mission: tess
+Total rows: 8461
+Rows with NASA metadata: 8461
+Rows missing NASA metadata: 0
+
+Prediction category counts:
+  non-planet: 6831
+  planet: 1630
+
+NASA category counts:
+  candidate: 5038
+  non-planet: 1793
+  planet: 1630
+
+Prediction vs NASA category matrix:
+nasa_category  candidate  non-planet  planet
+category                                    
+non-planet          5009        1783      39
+planet                29          10    1591
+
+Thresholds used for export:
+  planet: 0.95
+  candidate: 0.49447773035198633
+
+Base thresholds requested:
+  planet: 0.95
+  candidate: 0.5
+
+Calibrated candidate threshold (recall target):
+  threshold=0.4945 precision=0.7451 recall=0.6000 f1=0.6647 target=0.6
+
+Holdout metrics (threshold=0.50):
+  precision=0.7434 recall=0.5947 f1=0.6608 predicted_positive=304
+  confusion_matrix=[[1853, 78], [154, 226]]
+
+ROC-AUC=0.9153 PR-AUC=0.7319 positive_rate=0.1644
+
+Test size: 0.3
+Seed: 42

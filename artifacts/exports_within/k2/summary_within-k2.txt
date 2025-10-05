@@ -1,0 +1,39 @@
+Mission: k2
+Total rows: 17372
+Rows with NASA metadata: 17372
+Rows missing NASA metadata: 0
+
+Prediction category counts:
+  non-planet: 3093
+  planet: 14279
+
+NASA category counts:
+  candidate: 2564
+  non-planet: 529
+  planet: 14279
+
+Prediction vs NASA category matrix:
+nasa_category  candidate  non-planet  planet
+category                                    
+non-planet          2564         529       0
+planet                 0           0   14279
+
+Thresholds used for export:
+  planet: 0.95
+  candidate: 0.5
+
+Base thresholds requested:
+  planet: 0.95
+  candidate: 0.5
+
+Calibrated candidate threshold (recall target):
+  threshold=1.0000 precision=1.0000 recall=0.6000 f1=0.7500 target=0.6
+
+Holdout metrics (threshold=0.50):
+  precision=0.9986 recall=1.0000 f1=0.9993 predicted_positive=696
+  confusion_matrix=[[506, 1], [0, 695]]
+
+ROC-AUC=1.0000 PR-AUC=1.0000 positive_rate=0.5782
+
+Test size: 0.3
+Seed: 42

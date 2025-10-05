@@ -1,0 +1,17 @@
+ROC-AUC: 1.0000
+PR-AUC: 1.0000
+Positive rate: 0.5782
+
+Threshold metrics:
+  threshold=0.50: precision=0.9986 recall=1.0000 f1=0.9993 predicted_positive=696
+  threshold=0.95: precision=0.9986 recall=1.0000 f1=0.9993 predicted_positive=696
+  calibrated: precision=1.0000 recall=0.6000 f1=0.7500 predicted_positive=417
+
+Confusion matrix (threshold=0.5):
+  [[TN=506, FP=1], [FN=0, TP=695]]
+
+Test size: 0.3
+Seed: 42
+
+Recommended threshold: threshold=1.0000 precision=1.0000 recall=0.6000 f1=0.7500
+Recall target: 0.60

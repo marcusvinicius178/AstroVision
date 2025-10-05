@@ -1,0 +1,64 @@
+{
+  "roc_auc": 0.9817213791532614,
+  "pr_auc": 0.9500924886090901,
+  "num_samples": 2870,
+  "positive_rate": 0.28710801393728225,
+  "thresholds": {
+    "0.5": {
+      "precision": 0.893848009650181,
+      "recall": 0.8992718446601942,
+      "f1": 0.896551724137931,
+      "predicted_positive": 829,
+      "threshold": 0.5
+    },
+    "0.95": {
+      "precision": 0.9171122994652406,
+      "recall": 0.8325242718446602,
+      "f1": 0.8727735368956743,
+      "predicted_positive": 748,
+      "threshold": 0.95
+    },
+    "calibrated": {
+      "threshold": 0.9998293668406605,
+      "precision": 0.9574468085106383,
+      "recall": 0.6007281553398058,
+      "f1": 0.738255033557047,
+      "predicted_positive": 517,
+      "recall_target": 0.6
+    }
+  },
+  "recommended_threshold": {
+    "threshold": 0.9998293668406605,
+    "precision": 0.9574468085106383,
+    "recall": 0.6007281553398058,
+    "f1": 0.738255033557047,
+    "predicted_positive": 517,
+    "recall_target": 0.6
+  },
+  "confusion_matrix": {
+    "tn": 1958,
+    "fp": 88,
+    "fn": 83,
+    "tp": 741
+  },
+  "bucket_counts": {
+    "planet": 748,
+    "candidate": 81,
+    "non-planet": 2041
+  },
+  "bucket_positive_rate": {
+    "planet": 0.9171122994652406,
+    "candidate": 0.6790123456790124,
+    "non-planet": 0.040666340029397355
+  },
+  "configuration": {
+    "mission": "kepler",
+    "split": "within-mission",
+    "test_size": 0.3,
+    "seed": 42,
+    "ensemble": false,
+    "device": "cpu",
+    "oversample": false,
+    "recall_target": 0.6
+  }
+}
