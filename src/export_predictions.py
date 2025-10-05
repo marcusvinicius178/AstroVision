@@ -21,8 +21,10 @@ from typing import Dict, Iterable, List
 import pandas as pd
 
 if __package__ in (None, ""):
+    from dataio import nasa_bucket
     from exo_tabular import predict_cross_mission, train_cross_mission
 else:
+    from .dataio import nasa_bucket
     from .exo_tabular import predict_cross_mission, train_cross_mission
 
 
@@ -48,24 +50,6 @@ def bucketize(probability: float, th_planet: float = 0.95, th_candidate: float =
         return "planet"
     if probability >= th_candidate:
         return "candidate"
-    return "non-planet"
-
-
-def nasa_bucket(label_text: str, mission: str) -> str:
-    s = (label_text or "").strip().lower()
-    mission_key = mission.lower()
-    if mission_key in ("kepler", "k2"):
-        if s == "confirmed":
-            return "planet"
-        if s == "candidate":
-            return "candidate"
-        return "non-planet"
-    if mission_key == "tess":
-        if s in ("cp", "kp"):
-            return "planet"
-        if s == "pc":
-            return "candidate"
-        return "non-planet"
     return "non-planet"
 
 

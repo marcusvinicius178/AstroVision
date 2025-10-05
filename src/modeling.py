@@ -139,6 +139,40 @@ def build_pipeline(
     return pipeline
 
 
+def build_lightgbm_pipeline(
+    numeric_cols: Sequence[str],
+    categorical_cols: Sequence[str],
+    *,
+    random_state: int = 42,
+) -> Pipeline:
+    """Build a LightGBM-only pipeline with deterministic column alignment."""
+
+    preprocessor = build_preprocessor(numeric_cols, categorical_cols)
+    aligner = ColumnAligner()
+    params = {
+        "n_estimators": 500,
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "max_depth": -1,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "random_state": random_state,
+        "class_weight": "balanced",
+        "n_jobs": -1,
+        "objective": "binary",
+        "device_type": "cpu",
+    }
+    model = LGBMClassifier(**params)
+    pipeline = Pipeline(
+        steps=[
+            ("align", aligner),
+            ("preprocess", preprocessor),
+            ("model", model),
+        ]
+    )
+    return pipeline
+
+
 def fit_pipeline_with_fallback(
     pipeline_builder,
     numeric_cols: Sequence[str],

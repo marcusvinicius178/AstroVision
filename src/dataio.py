@@ -14,16 +14,25 @@ import pandas as pd
 
 LEAK_KEYWORDS = [
     "disposition",
+    "pdisposition",
     "koi_disposition",
-    "vetting",
-    "flag",
-    "score",
+    "koi_pdisposition",
+    "is_planet",
+    "planet",
+    "confirmed",
+    "candidate",
+    "status",
     "label",
     "class",
-    "status",
-    "false_positive",
+    "vetting",
     "fp",
-    "is_planet",
+    "false",
+    "not_planet",
+    "non_planet",
+    "gaia_class",
+    "tfop",
+    "followup",
+    "not_transit",
 ]
 
 EXTRA_EXCLUDED_SUBSTRINGS = ["name", "source", "notes"]
@@ -144,6 +153,20 @@ PHYSICAL_OUTPUT_COLUMNS = [
     "insolation",
     "eccentricity",
     "inclination",
+    "sy_snum",
+    "sy_pnum",
+    "stellar_teff",
+    "stellar_logg",
+    "stellar_radius",
+    "stellar_mass",
+    "ra",
+    "dec",
+    "sy_dist",
+    "sy_vmag",
+    "sy_kmag",
+    "sy_gaiamag",
+    "koi_model_snr",
+    "koi_kepmag",
 ]
 
 
@@ -268,8 +291,13 @@ def _build_metadata(
     metadata["group_id"] = group_id.astype(str).fillna("unknown")
     metadata["label_text"] = raw_labels.astype(str)
     for physical in PHYSICAL_OUTPUT_COLUMNS:
+        series = None
         if physical in canonical_features:
-            metadata[physical] = canonical_features[physical]
+            series = canonical_features[physical]
+        elif physical in df.columns:
+            series = pd.to_numeric(df[physical], errors="coerce")
+        if series is not None:
+            metadata[physical] = series
     return metadata
 
 
@@ -366,3 +394,34 @@ def load_feature_schema(path: Path) -> List[str]:
 def align_to_schema(df: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
     aligned = df.reindex(columns=columns, fill_value=np.nan)
     return aligned
+
+
+def nasa_bucket(label_text: str, mission: str) -> str:
+    """Normalize NASA disposition labels into three buckets."""
+
+    text = (label_text or "").strip().lower()
+    mission_key = mission.lower()
+    if mission_key in ("kepler", "k2"):
+        if text == "confirmed":
+            return "planet"
+        if text == "candidate":
+            return "candidate"
+        return "non-planet"
+    if mission_key == "tess":
+        if text in {"cp", "kp"}:
+            return "planet"
+        if text == "pc":
+            return "candidate"
+        return "non-planet"
+    return "non-planet"
+
+
+def load_mission_df(
+    mission: str,
+    data_dir: Path,
+    logger: Optional[logging.Logger] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Return mission features and metadata data frames."""
+
+    dataset = load_mission_dataset(mission, data_dir, logger)
+    return dataset.features.copy(), dataset.metadata.copy()
