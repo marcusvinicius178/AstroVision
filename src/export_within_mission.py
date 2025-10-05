@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
@@ -395,7 +396,9 @@ def process_mission(
 
 
 def main(argv: Iterable[str] | None = None) -> None:
-    args = parse_args(argv or [])
+    if argv is None:
+        argv = sys.argv[1:]
+    args = parse_args(argv)
     configure_logging()
     logger = logging.getLogger("export_within_mission")
     missions = _select_missions(args.missions)
