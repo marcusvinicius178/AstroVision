@@ -127,7 +127,7 @@ def _format_metrics_text(
     precision: float,
     recall: float,
     f1: float,
-    support: float,
+    support: float | None,
     confusion: np.ndarray,
     test_size: float,
     seed: int,
@@ -138,7 +138,7 @@ def _format_metrics_text(
         f"Precision (threshold=0.5): {precision:.4f}",
         f"Recall (threshold=0.5): {recall:.4f}",
         f"F1 (threshold=0.5): {f1:.4f}",
-        f"Support (positive class): {int(support)}",
+        f"Support (positive class): {int(support) if support is not None else 'n/a'}",
         "",
         "Confusion matrix (threshold=0.5):",
         str(confusion),
@@ -308,6 +308,7 @@ def process_mission(
         zero_division=0,
     )
     confusion = confusion_matrix(y_test, predictions_test)
+    positive_support = int((y_test == 1).sum())
 
     metrics_text = _format_metrics_text(
         roc_auc,
@@ -315,7 +316,7 @@ def process_mission(
         precision,
         recall,
         f1,
-        support,
+        support if support is not None else positive_support,
         confusion,
         test_size,
         seed,
