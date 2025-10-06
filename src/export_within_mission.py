@@ -122,7 +122,21 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
+def _normalize_threshold(value: float) -> float:
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def bucketize(probability: float, th_planet: float, th_candidate: float) -> str:
+    th_planet = _normalize_threshold(th_planet)
+    th_candidate = _normalize_threshold(th_candidate)
+    if th_candidate >= th_planet:
+        th_candidate = max(0.0, min(th_candidate, th_planet - 1e-6))
     if probability >= th_planet:
         return "planet"
     if probability >= th_candidate:
@@ -607,7 +621,10 @@ def main(argv: Iterable[str] | None = None) -> None:
     logger = logging.getLogger("export_within_mission")
     missions = _select_missions(args.missions)
     logger.info("Running within-mission export for missions: %s", missions)
-    thresholds = {"planet": args.threshold_planet, "candidate": args.threshold_candidate}
+    thresholds = {
+        "planet": _normalize_threshold(args.threshold_planet),
+        "candidate": _normalize_threshold(args.threshold_candidate),
+    }
 
     for mission in missions:
         process_mission(
