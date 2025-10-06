@@ -48,6 +48,14 @@ The **frontend**, developed in **React (JavaScript, JSX, CSS)**, visualizes the 
 * **Beginner mode:** simplified, educational visualization of planet candidates.
 * **Advanced mode:** detailed analytics, probability thresholds, and confusion matrices for research use.
 
+### 🎨 Interactive Prototype
+
+To preview the **AstroVision** front-end interface and animations, you can explore our live **Figma prototype** here:
+
+👉 [View the AstroVision UI/UX Animation on Figma](https://www.figma.com/proto/GOgsWQN1HcpZFNVrXogtJc/Astrovision?page-id=0%3A1&node-id=5-2&viewport=418%2C-211%2C0.18&t=zvKqkxmrqhbvQiXD-1&scaling=min-zoom&content-scaling=fixed&starting-point-node-id=5%3A2&show-proto-sidebar=1)
+
+This prototype demonstrates the **animated navigation**, **planet visualization transitions**, and **user interaction flow** designed for both beginner and advanced modes.
+
 ### **Frontend Status**
 
 * The React interface is fully functional with routing, components, and styling.
