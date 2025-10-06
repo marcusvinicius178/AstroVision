@@ -1,73 +1,135 @@
-In this repository we are developing a deep learning model to detect and classify exoplanets. # AstroVision
+# AstroVision – Exoplanet AI Detection
 
-## Recent pipeline enhancements
+**AstroVision** is a collaborative project that combines **machine learning** and **interactive visualization** to identify and classify potential exoplanets from NASA missions (Kepler, TESS, and K2).
+It integrates a **Python backend** powered by a LightGBM classifier and a **React-based frontend** that allows users to intuitively explore classification results.
 
-- **Balanced training** – the `exo_tabular` training commands now weight each sample inversely to its class frequency, helping the classifier pay more attention to the rare confirmed exoplanets.
-- **Optional oversampling** – pass `--oversample` to `python -m src.exo_tabular ...` or `python -m src.export_predictions ...` to duplicate minority-class examples with an internal `RandomOverSampler` (requires `imbalanced-learn`).
-- **Calibrated thresholds** – provide a target recall via `--recall-target` (default `0.6`). The training reports (`metrics_*.json`) include a recommended probability threshold that achieves at least that recall, and prediction modes can consume it with `--use-calibrated-buckets`/`--use-calibrated-thresholds` to adjust the candidate bucket.
-- **Within-mission exports** – `python -m src.export_within_mission ...` now oversamples the positive class by default, records calibrated candidate thresholds that hit the desired recall, saves both JSON and text metric reports, and uses the calibrated threshold automatically unless `--keep-default-thresholds` is provided.
-- **Safe threshold fallback** – when a calibrated candidate cutoff is greater than or equal to the planet threshold (e.g., when the model cannot reach the requested recall before hitting 0.95), the tooling automatically keeps the default candidate threshold so that the candidate bucket never collapses.
+---
 
-## Rebuilding metrics, charts and exports
+## 🌌 Project Overview
 
-After installing the project requirements (and optionally `imbalanced-learn`), the following commands recreate the key artifacts from scratch. They assume you are in the repository root.
+Our goal is to democratize exoplanet discovery by merging advanced data processing with an accessible, game-like interface.
+The backend analyzes celestial data to classify each object as a **Planet**, **Candidate Planet**, or **Not Planet**, while the frontend presents these results visually and interactively.
 
-1. **Clean existing artifacts (optional but recommended):**
-   ```bash
-   rm -rf artifacts/*
-   ```
+---
 
-2. **Cross-mission training (produces ROC/PR/confusion PNGs & metrics JSON):**
-   ```bash
-   for mission in tess k2 kepler; do
-     python -m src.exo_tabular \
-       --mode train \
-       --split cross-mission \
-       --test-mission "$mission" \
-       --device cpu \
-       --oversample \
-       --recall-target 0.6
-   done
-   ```
+## ⚙️ Backend – Machine Learning Model (Python)
 
-3. **Cross-mission predictions with calibrated buckets:**
-   ```bash
-   for mission in tess k2 kepler; do
-     python -m src.exo_tabular \
-       --mode predict \
-       --split cross-mission \
-       --test-mission "$mission" \
-       --use-calibrated-buckets
-   done
-   ```
+The ML model extracts attributes from NASA datasets (Kepler, TESS, K2) using features derived from:
 
-4. **Automated export pipeline (optional convenience wrapper):**
-   ```bash
-   python -m src.export_predictions \
-     --data-dir ./data \
-     --artifacts-dir ./artifacts \
-     --runs cross-mission \
-     --oversample \
-     --recall-target 0.6 \
-     --use-calibrated-thresholds
-   ```
+* **Transit Method**
+* **Radial Velocity**
+* **Astrometry**
 
-5. **Within-mission exports (70/30 split, metrics + CSVs):**
-   ```bash
-   python -m src.export_within_mission \
-     --data-dir ./data \
-     --artifacts-dir ./artifacts \
-     --missions kepler k2 tess \
-     --test-size 0.30 \
-     --seed 42 \
-     --threshold-planet 0.95 \
-     --threshold-candidate 0.50
-   ```
+Data were split into **80% training** and **20% testing**, and a **LightGBM decision tree model** was used for classification.
+A **linear regression step** converts the model’s output probabilities into three categories:
 
-Each command logs the selected thresholds, saves the confusion matrix/curve charts, and drops mission-specific CSVs (planets, candidates, non-planets, discrepancy tables) into the `artifacts/` tree.
+| Probability Range | Classification   |
+| ----------------- | ---------------- |
+| P < 50%           | Not Planet       |
+| 50% ≤ P < 95%     | Candidate Planet |
+| P ≥ 95%           | Planet           |
 
-Make sure `imbalanced-learn` is installed to enable the oversampling option:
+### **Performance Summary**
+
+| Mission | Accuracy | Precision | Recall | F1-score | Predicted Positives |
+| ------- | -------- | --------- | ------ | -------- | ------------------- |
+| Kepler  | 92.6%    | 79.7%     | 99.0%  | 88.5%    | 4,388               |
+| K2      | 82.1%    | 60.0%     | 84.0%  | 69.9%    | 6,060               |
+| TESS    | 79.4%    | 36.8%     | 62.6%  | 46.3%    | 2,044               |
+
+These metrics show that AstroVision’s model is **highly deterministic**, producing fewer ambiguous candidates and a stronger separation between planets and non-planets.
+
+---
+
+## 💻 Frontend – React Interface
+
+The **frontend**, developed in **React (JavaScript, JSX, CSS)**, visualizes the ML results and provides an educational interface that engages users of different expertise levels.
+
+* **Beginner mode:** simplified, educational visualization of planet candidates.
+* **Advanced mode:** detailed analytics, probability thresholds, and confusion matrices for research use.
+
+### **Frontend Status**
+
+* The React interface is fully functional with routing, components, and styling.
+* The backend API (Python) handles data ingestion and classification independently.
+* Integration between React and Python API endpoints is planned for the next stage.
+
+---
+
+## 🧠 AI Tools and Libraries
+
+**Backend:**
+
+* `scikit-learn`, `lightgbm`, `numpy`, `pandas`, `imbalanced-learn`
+* `matplotlib`, `seaborn`, `json`, `flask` (for serving APIs)
+* **Python 3.10+**
+
+**Frontend:**
+
+* `React`, `Vite`, `Node.js`, `Axios`, `React Router`, `Chart.js`
+
+**AI Assistance:**
+
+* ChatGPT-5 and OpenAI Codex were used for code generation, documentation, and data processing assistance.
+
+---
+
+## 🧹 Repository Structure
+
+```
+├── src/                # ML scripts and training modules
+├── artifacts/          # Generated confusion matrices and reports
+├── data/               # Processed datasets
+├── frontend/           # React user interface
+├── requirements.txt    # Python dependencies
+├── environment.yml     # Conda environment configuration
+└── README.md           # This file
+```
+
+---
+
+##  Running the Project
+
+### Backend (Python)
 
 ```bash
-pip install imbalanced-learn
+# Create environment
+conda env create -f environment.yml
+conda activate exoplanets
+
+# Run training pipeline
+python -m src.exo_tabular --mode train --split cross-mission --oversample
 ```
+
+### Frontend (React)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The React app will run on `http://localhost:5173` (by default) and will connect to the Flask API once integration is finalized.
+
+---
+
+## 🚀 Next Steps
+
+* Connect React frontend with Python backend via REST API.
+* Deploy unified app (frontend + backend) on **Vercel** and **Render/Heroku**.
+* Enhance visualization of probability distributions and planetary discovery statistics.
+
+---
+
+## 👩‍🚀 Authors
+
+* **Marcus Vinicius Leal de Carvalho** – Machine Learning, NASA Dataset Integration
+* **Madu** – Frontend Development (React UI/UX)
+* **AstroVision Team** – Data Science, Research & Design
+
+---
+
+## 🌠 License
+
+This project was developed as part of the **NASA Space Apps Challenge 2025**.
+All datasets are from the **NASA Exoplanet Archive** and are publicly available.
