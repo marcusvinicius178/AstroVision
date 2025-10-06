@@ -132,9 +132,20 @@ def _normalize_threshold(value: float) -> float:
     return float(value)
 
 
+def _normalize_probability(value: float) -> float:
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def bucketize(probability: float, th_planet: float, th_candidate: float) -> str:
     th_planet = _normalize_threshold(th_planet)
     th_candidate = _normalize_threshold(th_candidate)
+    probability = _normalize_probability(probability)
     if th_candidate >= th_planet:
         th_candidate = max(0.0, min(th_candidate, th_planet - 1e-6))
     if probability >= th_planet:
@@ -562,6 +573,7 @@ def process_mission(
         },
         index=metadata.index,
     )
+    base_predictions["proba_planet"] = base_predictions["proba_planet"].apply(_normalize_probability)
     base_predictions["confidence_pct"] = (base_predictions["proba_planet"] * 100).round(2)
     base_predictions["category"] = base_predictions["proba_planet"].apply(
         bucketize,

@@ -78,9 +78,28 @@ def _normalize_threshold(value: float) -> float:
     return float(value)
 
 
+def _normalize_probability(value: float) -> float:
+    """Convert probability percentages into probabilities.
+
+    Some historical prediction exports stored the model score in the ``0-100``
+    range instead of ``0-1``.  When those values are consumed by the newer
+    bucket logic the candidate range collapses because every value ends up
+    greater than the planet threshold.  Detect these legacy percentages and
+    coerce them back into a standard probability."""
+
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def bucketize(probability: float, th_planet: float = 0.95, th_candidate: float = 0.50) -> str:
     th_planet = _normalize_threshold(th_planet)
     th_candidate = _normalize_threshold(th_candidate)
+    probability = _normalize_probability(probability)
     if th_candidate >= th_planet:
         th_candidate = max(0.0, min(th_candidate, th_planet - 1e-6))
     if probability >= th_planet:
@@ -152,6 +171,7 @@ def _prepare_predictions(
     thresholds: Dict[str, float],
 ) -> pd.DataFrame:
     df = predictions.copy()
+    df["proba_planet"] = df["proba_planet"].apply(_normalize_probability)
     df["category"] = df["proba_planet"].apply(
         bucketize,
         th_planet=thresholds["planet"],

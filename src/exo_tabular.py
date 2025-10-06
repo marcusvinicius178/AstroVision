@@ -122,6 +122,16 @@ def _normalize_threshold(value: float) -> float:
     return float(value)
 
 
+def _normalize_probability(value: float) -> float:
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def assign_bucket(probabilities: np.ndarray, *, thresholds: Optional[Dict[str, float]] = None) -> List[str]:
     if thresholds is None:
         thresholds = {"planet": 0.95, "candidate": 0.5}
@@ -131,6 +141,7 @@ def assign_bucket(probabilities: np.ndarray, *, thresholds: Optional[Dict[str, f
         candidate_th = max(0.0, min(candidate_th, planet_th - 1e-6))
     buckets: List[str] = []
     for value in probabilities:
+        value = _normalize_probability(float(value))
         if value >= planet_th:
             buckets.append("planet")
         elif value >= candidate_th:
