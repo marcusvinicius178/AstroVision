@@ -112,15 +112,36 @@ def log_feature_set(features: pd.DataFrame, logger: logging.Logger) -> None:
     logger.info("Feature columns: %s", columns)
 
 
+def _normalize_threshold(value: float) -> float:
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
+def _normalize_probability(value: float) -> float:
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def assign_bucket(probabilities: np.ndarray, *, thresholds: Optional[Dict[str, float]] = None) -> List[str]:
     if thresholds is None:
         thresholds = {"planet": 0.95, "candidate": 0.5}
-    planet_th = thresholds.get("planet", 0.95)
-    candidate_th = thresholds.get("candidate", 0.5)
+    planet_th = _normalize_threshold(thresholds.get("planet", 0.95))
+    candidate_th = _normalize_threshold(thresholds.get("candidate", 0.5))
     if candidate_th >= planet_th:
         candidate_th = max(0.0, min(candidate_th, planet_th - 1e-6))
     buckets: List[str] = []
     for value in probabilities:
+        value = _normalize_probability(float(value))
         if value >= planet_th:
             buckets.append("planet")
         elif value >= candidate_th:
