@@ -58,7 +58,31 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
+def _normalize_threshold(value: float) -> float:
+    """Convert threshold percentages into probabilities.
+
+    The CLI historically accepted inputs such as ``50`` or ``95`` to express
+    50% and 95%.  Interpreting those literally leads to impossible decision
+    rules (probabilities are in ``[0, 1]``), which in turn collapses the
+    candidate bucket to zero elements.  To make the interface resilient, any
+    value greater than one is treated as a percentage and scaled back to the
+    ``[0, 1]`` interval.
+    """
+
+    if value > 1:
+        value = value / 100.0
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return float(value)
+
+
 def bucketize(probability: float, th_planet: float = 0.95, th_candidate: float = 0.50) -> str:
+    th_planet = _normalize_threshold(th_planet)
+    th_candidate = _normalize_threshold(th_candidate)
+    if th_candidate >= th_planet:
+        th_candidate = max(0.0, min(th_candidate, th_planet - 1e-6))
     if probability >= th_planet:
         return "planet"
     if probability >= th_candidate:
@@ -157,7 +181,10 @@ def run_cross_mission(args: argparse.Namespace) -> None:
     logger = logging.getLogger("export_predictions")
     data_dir = args.data_dir
     artifacts_dir = args.artifacts_dir
-    base_thresholds = {"planet": args.threshold_planet, "candidate": args.threshold_candidate}
+    base_thresholds = {
+        "planet": _normalize_threshold(args.threshold_planet),
+        "candidate": _normalize_threshold(args.threshold_candidate),
+    }
     missions = ["tess", "k2", "kepler"]
 
     for mission in missions:
