@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999; 
+}
+
+.modalGrande {
+  position: relative; 
+  width: 70%;
+  max-width: 900px;
+  height: 75%;
+  padding: 40px; /* Mantido o padding para ter espaço nas laterais */
+  border-radius: 20px;
+  box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+  background-color: rgba(0,0,0,0.5); 
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start; 
+  align-items: flex-start; /* GARANTINDO QUE TODO O CONTEÚDO FIQUE À ESQUERDA */
+  color: white;
+  text-align: left; /* Adicionado para garantir que qualquer texto direto também alinhe à esquerda */
+}
+
+.modalTitle,
+.modalTitleOne {
+  font-family: 'Bebas Neue', sans-serif;
+  text-align: left;
+  margin-left: 0; /* CORREÇÃO: Remove o margin-left para alinhar com o padding do container */
+  font-weight: bold;
+}
+
+.modalTitle {
+  font-size: 2rem;
+  margin-bottom: 5px; /* Ajustado um pouco para ficar mais próximo como na imagem */
+}
+
+.modalTitleOne {
+  font-size: 4rem;
+  margin-bottom: 20px; /* Ajustado para dar mais espaço antes do corpo do texto */
+}
+
+.modal-body {
+  font-size: 1.2rem;
+  margin-bottom: 30px;
+  text-align: left; /* CORREÇÃO: Garante que o texto dentro do parágrafo fique à esquerda */
+  /* align-items: flex-start; REMOVIDO: Era uma propriedade flexbox desnecessária aqui */
+}
+
+.modal-close {
+  background: linear-gradient(90deg, #004d99, #007bff);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 20px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+  width: 200px;
+  margin: 0 auto;
+}
+
+.astronauta {
+  position: absolute;
+  bottom: 15px;
+  right: 8px;   
+  width: 300px; 
+  height: auto;
+  pointer-events: none; 
+  z-index: 10;          
+}
+
+.modal-close:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4);
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

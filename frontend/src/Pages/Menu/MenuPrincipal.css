@@ -1,0 +1,141 @@
+.fundoContainer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;      
+  justify-content: flex-start;
+  align-items: center;
+  background-color: #f0f4f8;
+  padding: 40px 15px;
+}
+
+.tituloPrincipal {
+  font-size: 26px;
+  color: #333;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.cardContainerzinho {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 40px;                   
+  flex-wrap: wrap;              
+}
+
+.card {
+  width: 260px;               
+  background-color: white;
+  padding: 16px 18px;
+  border-radius: 20px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 300px;      
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+}
+
+.card.highlight {
+  border: 2px solid #6a0dad;
+}
+
+.cardzinhoHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.cardTitle {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin: 0;
+}
+
+.cardDescricao {
+  font-size: 0.9rem;
+  color: #4a5568;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.tag-button {
+  padding: 8px 13px;
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.tag-button.basic {
+  background-color: #40df32;
+}
+
+.tag-button.advanced {
+  background-color: #693ae9;
+}
+
+.cardzinhoImage {
+  width: 100%;
+  min-height: 70px;            
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: auto;
+}
+
+.card-image {
+  width: 320px;                  
+  height: auto;
+  display: block;
+}
+
+.card-button {
+  background-color: #4c51bf;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background-color 0.3s ease;
+}
+
+.card-button:hover {
+  background-color: #3f44a3;
+}
+
+.card.selected {
+  background-color: #f6f0ff;
+  border: 2px solid #6a0dad;
+  box-shadow: 0 10px 30px rgba(106, 13, 173, 0.3);
+  transform: translateY(-5px);
+}
+
+.card.selected:hover {
+  box-shadow: 0 15px 40px rgba(106, 13, 173, 0.4);
+}
+
+@media (max-width: 768px) {
+  .cardContainerzinho {
+    flex-direction: column;
+    gap: 25px;
+  }
+
+  .card {
+    width: 85%;
+    max-width: 320px;
+  }
+}
