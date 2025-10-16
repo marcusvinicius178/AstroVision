@@ -7,6 +7,9 @@ In this repository we are developing a deep learning model to detect and classif
 - **Calibrated thresholds** – provide a target recall via `--recall-target` (default `0.6`). The training reports (`metrics_*.json`) include a recommended probability threshold that achieves at least that recall, and prediction modes can consume it with `--use-calibrated-buckets`/`--use-calibrated-thresholds` to adjust the candidate bucket.
 - **Within-mission exports** – `python -m src.export_within_mission ...` now oversamples the positive class by default, records calibrated candidate thresholds that hit the desired recall, saves both JSON and text metric reports, and uses the calibrated threshold automatically unless `--keep-default-thresholds` is provided.
 - **Safe threshold fallback** – when a calibrated candidate cutoff is greater than or equal to the planet threshold (e.g., when the model cannot reach the requested recall before hitting 0.95), the tooling automatically keeps the default candidate threshold so that the candidate bucket never collapses.
+- **NASA-style dispositions** – the tabular pipeline can now learn the three official NASA categories (`planet`, `candidate`, `non-planet`). Set `--label-mode nasa` (the new default) to train a multiclass model or `--label-mode binary` to retain the previous confirmed vs. non-confirmed setup.
+
+> **Tip:** Artifacts are stored under names that include the label mode (for example, `model_tess_nasa.pkl`). Make sure to match the label mode when reloading models or metrics.
 
 ## Rebuilding metrics, charts and exports
 
@@ -24,6 +27,7 @@ After installing the project requirements (and optionally `imbalanced-learn`), t
        --mode train \
        --split cross-mission \
        --test-mission "$mission" \
+       --label-mode nasa \
        --device cpu \
        --oversample \
        --recall-target 0.6
@@ -37,6 +41,7 @@ After installing the project requirements (and optionally `imbalanced-learn`), t
        --mode predict \
        --split cross-mission \
        --test-mission "$mission" \
+       --label-mode nasa \
        --use-calibrated-buckets
    done
    ```
