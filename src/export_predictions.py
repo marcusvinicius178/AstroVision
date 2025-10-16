@@ -218,6 +218,7 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             oversample=args.oversample,
             random_state=args.random_state,
             recall_target=args.recall_target,
+            label_mode="binary",
             logger=logger,
         )
         logger.info("Predicting mission %s", mission)
@@ -226,12 +227,13 @@ def run_cross_mission(args: argparse.Namespace) -> None:
             data_dir,
             artifacts_dir,
             model_path=model_path,
+            label_mode="binary",
             logger=logger,
         )
         _log_join_gaps(predictions, mission, logger)
         mission_thresholds = dict(base_thresholds)
         if args.use_calibrated_thresholds:
-            metrics_path = artifacts_dir / f"metrics_{mission}.json"
+            metrics_path = artifacts_dir / f"metrics_{mission}_binary.json"
             calibrated = _load_calibrated_threshold(metrics_path)
             if calibrated is not None:
                 if calibrated >= mission_thresholds["planet"]:

@@ -22,6 +22,8 @@ from sklearn.metrics import (
     RocCurveDisplay,
     average_precision_score,
     confusion_matrix,
+    accuracy_score,
+    log_loss,
     precision_recall_fscore_support,
     roc_auc_score,
 )
@@ -68,17 +70,27 @@ def build_preprocessor(numeric_cols: Sequence[str], categorical_cols: Sequence[s
     return ColumnTransformer(transformers=transformers)
 
 
-def _instantiate_lgbm(device: str, random_state: int = 42) -> LGBMClassifier:
+def _instantiate_lgbm(
+    device: str,
+    random_state: int = 42,
+    *,
+    objective: str = "binary",
+    num_class: Optional[int] = None,
+) -> LGBMClassifier:
     params = {
         "n_estimators": 600,
         "learning_rate": 0.05,
         "num_leaves": 64,
         "subsample": 0.7,
         "colsample_bytree": 0.7,
-        "objective": "binary",
+        "objective": objective,
         "random_state": random_state,
         "n_jobs": -1,
     }
+    if objective == "multiclass":
+        if num_class is None:
+            raise ValueError("num_class must be provided for multiclass objective")
+        params["num_class"] = num_class
     if device == "gpu":
         params.update(
             {
@@ -100,6 +112,8 @@ def build_pipeline(
     ensemble: bool = False,
     random_state: int = 42,
     oversample: bool = False,
+    problem_type: str = "binary",
+    class_names: Optional[Sequence[str]] = None,
 ) -> Pipeline:
     preprocessor = build_preprocessor(numeric_cols, categorical_cols)
     aligner = ColumnAligner()
@@ -107,8 +121,16 @@ def build_pipeline(
         raise ImportError(
             "imbalanced-learn is required for oversampling. Install it with 'pip install imbalanced-learn'."
         )
+    if problem_type not in {"binary", "multiclass"}:
+        raise ValueError(f"Unsupported problem_type '{problem_type}'.")
+    num_class = len(class_names) if class_names is not None else None
+    lgbm = _instantiate_lgbm(
+        device=device,
+        random_state=random_state,
+        objective="multiclass" if problem_type == "multiclass" else "binary",
+        num_class=num_class,
+    )
     if ensemble:
-        lgbm = _instantiate_lgbm(device=device, random_state=random_state)
         rf = RandomForestClassifier(
             n_estimators=400,
             max_depth=None,
@@ -126,6 +148,7 @@ def build_pipeline(
             max_iter=1000,
             solver="lbfgs",
             class_weight="balanced",
+            multi_class="auto",
         )
         stacking = StackingClassifier(
             estimators=[
@@ -141,7 +164,7 @@ def build_pipeline(
         )
         model = stacking
     else:
-        model = _instantiate_lgbm(device=device, random_state=random_state)
+        model = lgbm
     steps = [
         ("align", aligner),
         ("preprocess", preprocessor),
@@ -166,6 +189,8 @@ def build_lightgbm_pipeline(
     categorical_cols: Sequence[str],
     *,
     random_state: int = 42,
+    problem_type: str = "binary",
+    class_names: Optional[Sequence[str]] = None,
 ) -> Pipeline:
     """Build a LightGBM-only pipeline with deterministic column alignment."""
 
@@ -184,6 +209,11 @@ def build_lightgbm_pipeline(
         "objective": "binary",
         "device_type": "cpu",
     }
+    if problem_type == "multiclass":
+        num_class = len(class_names) if class_names is not None else None
+        if not num_class:
+            raise ValueError("class_names must be provided for multiclass problems")
+        params.update({"objective": "multiclass", "num_class": num_class})
     model = LGBMClassifier(**params)
     pipeline = Pipeline(
         steps=[
@@ -328,6 +358,60 @@ def evaluate_binary_classification(
     return metrics
 
 
+def evaluate_multiclass_classification(
+    y_true: Sequence[int],
+    proba: np.ndarray,
+    class_names: Sequence[str],
+) -> Dict[str, object]:
+    y_true_arr = np.asarray(y_true)
+    proba_arr = np.asarray(proba)
+    if proba_arr.ndim != 2:
+        raise ValueError("Probability array for multiclass evaluation must be 2-dimensional.")
+    preds = np.argmax(proba_arr, axis=1)
+    num_classes = proba_arr.shape[1]
+    if num_classes != len(class_names):
+        raise ValueError("Number of classes in probabilities does not match class_names length.")
+    metrics: Dict[str, object] = {}
+    metrics["num_samples"] = int(len(y_true_arr))
+    metrics["accuracy"] = float(accuracy_score(y_true_arr, preds))
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true_arr,
+        preds,
+        labels=np.arange(num_classes),
+        zero_division=0,
+    )
+    per_class: Dict[str, Dict[str, float]] = {}
+    for idx, name in enumerate(class_names):
+        per_class[name] = {
+            "precision": float(precision[idx]),
+            "recall": float(recall[idx]),
+            "f1": float(f1[idx]),
+            "support": int(support[idx]),
+        }
+    metrics["per_class"] = per_class
+    metrics["macro_f1"] = float(np.mean(f1))
+    metrics["true_distribution"] = {
+        class_names[idx]: int(np.sum(y_true_arr == idx)) for idx in range(num_classes)
+    }
+    metrics["predicted_distribution"] = {
+        class_names[idx]: int(np.sum(preds == idx)) for idx in range(num_classes)
+    }
+    try:
+        metrics["log_loss"] = float(log_loss(y_true_arr, proba_arr))
+    except ValueError:
+        metrics["log_loss"] = float("nan")
+    try:
+        metrics["roc_auc_ovr"] = float(
+            roc_auc_score(y_true_arr, proba_arr, multi_class="ovr")
+        )
+    except ValueError:
+        metrics["roc_auc_ovr"] = float("nan")
+    cm = confusion_matrix(y_true_arr, preds, labels=np.arange(num_classes))
+    metrics["confusion_matrix"] = cm.tolist()
+    metrics["class_names"] = list(class_names)
+    return metrics
+
+
 def save_metrics(metrics: Dict[str, object], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(metrics, indent=2))
@@ -361,6 +445,23 @@ def plot_confusion_matrix(y_true: Sequence[int], proba: Sequence[float], thresho
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
     disp.plot(ax=ax, cmap="Blues", colorbar=False)
     ax.set_title(f"Confusion Matrix (threshold={threshold:.2f})")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_multiclass_confusion_matrix(
+    y_true: Sequence[int],
+    preds: Sequence[int],
+    class_names: Sequence[str],
+    output_path: Path,
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cm = confusion_matrix(y_true, preds, labels=np.arange(len(class_names)))
+    fig, ax = plt.subplots(figsize=(5, 5))
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+    disp.plot(ax=ax, cmap="Blues", colorbar=False)
+    ax.set_title("Confusion Matrix")
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
     plt.close(fig)

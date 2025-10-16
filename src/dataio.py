@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -178,6 +178,8 @@ class MissionDataset:
     features: pd.DataFrame
     labels: pd.Series
     metadata: pd.DataFrame
+    label_mode: str = "binary"
+    class_names: List[str] = field(default_factory=list)
 
 
 def read_mission_csv(path: Path) -> pd.DataFrame:
@@ -200,14 +202,32 @@ def _detect_label_column(mission: str, df: pd.DataFrame) -> str:
     raise ValueError(f"Could not find a label column for mission '{mission}'.")
 
 
-def _map_labels(mission: str, label_series: pd.Series) -> Tuple[pd.Series, pd.Series]:
-    positives = MISSION_POSITIVE_LABELS.get(mission, set())
+def _map_labels(
+    mission: str,
+    label_series: pd.Series,
+    *,
+    label_mode: str = "binary",
+) -> Tuple[pd.Series, pd.Series, Optional[pd.Series]]:
     raw = label_series.astype("string")
     lowered = raw.str.lower().str.strip()
     mask_known = raw.notna() & ~lowered.isin({"", "nan", "none"})
     mapped = pd.Series(np.nan, index=label_series.index, dtype=float)
-    mapped.loc[mask_known] = lowered.loc[mask_known].isin(positives).astype(float)
-    return mapped, raw.fillna("")
+    bucket_labels: Optional[pd.Series] = None
+    if label_mode == "nasa":
+        buckets = raw.fillna("").map(lambda value: nasa_bucket(value, mission))
+        bucket_categories = pd.Categorical(
+            buckets,
+            categories=["non-planet", "candidate", "planet"],
+            ordered=True,
+        )
+        bucket_codes = pd.Series(bucket_categories.codes, index=label_series.index, dtype=float)
+        mapped.loc[mask_known] = bucket_codes.loc[mask_known]
+        mapped.replace({-1.0: np.nan}, inplace=True)
+        bucket_labels = buckets
+    else:
+        positives = MISSION_POSITIVE_LABELS.get(mission, set())
+        mapped.loc[mask_known] = lowered.loc[mask_known].isin(positives).astype(float)
+    return mapped, raw.fillna(""), bucket_labels
 
 
 def _filter_leak_columns(df: pd.DataFrame, logger: logging.Logger) -> pd.DataFrame:
@@ -270,6 +290,8 @@ def _build_metadata(
     df: pd.DataFrame,
     raw_labels: pd.Series,
     canonical_features: Dict[str, pd.Series],
+    *,
+    bucket_labels: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     metadata = pd.DataFrame(index=df.index)
     metadata["mission"] = mission
@@ -290,6 +312,8 @@ def _build_metadata(
         group_id = metadata["object_id"]
     metadata["group_id"] = group_id.astype(str).fillna("unknown")
     metadata["label_text"] = raw_labels.astype(str)
+    if bucket_labels is not None:
+        metadata["nasa_bucket"] = bucket_labels.astype(str)
     for physical in PHYSICAL_OUTPUT_COLUMNS:
         series = None
         if physical in canonical_features:
@@ -309,7 +333,13 @@ def _append_additional_numeric(features: pd.DataFrame, df: pd.DataFrame) -> pd.D
     return augmented
 
 
-def load_mission_dataset(mission: str, data_dir: Path, logger: Optional[logging.Logger] = None) -> MissionDataset:
+def load_mission_dataset(
+    mission: str,
+    data_dir: Path,
+    logger: Optional[logging.Logger] = None,
+    *,
+    label_mode: str = "binary",
+) -> MissionDataset:
     logger = logger or logging.getLogger(__name__)
     mission_key = mission.lower()
     if mission_key not in MISSION_FILES:
@@ -321,7 +351,11 @@ def load_mission_dataset(mission: str, data_dir: Path, logger: Optional[logging.
     df = read_mission_csv(path)
     df = _standardize_identifiers(df)
     label_col = _detect_label_column(mission_key, df)
-    labels, raw_labels = _map_labels(mission_key, df[label_col])
+    labels, raw_labels, bucket_labels = _map_labels(
+        mission_key,
+        df[label_col],
+        label_mode=label_mode,
+    )
     valid_mask = labels.notna()
     df = df.loc[valid_mask].copy()
     labels = labels.loc[valid_mask].astype(int)
@@ -334,9 +368,32 @@ def load_mission_dataset(mission: str, data_dir: Path, logger: Optional[logging.
     features, canonical = _extract_canonical_features(filtered)
     features = _append_additional_numeric(features, filtered)
     features = features.dropna(axis=1, how="all")
-    metadata = _build_metadata(mission_key, feature_source, raw_labels, canonical)
-    logger.info("Mission %s: %d samples, %d features after leak removal", mission_key, len(features), features.shape[1])
-    return MissionDataset(mission=mission_key, features=features, labels=labels, metadata=metadata)
+    metadata = _build_metadata(
+        mission_key,
+        feature_source,
+        raw_labels,
+        canonical,
+        bucket_labels=bucket_labels.loc[valid_mask] if bucket_labels is not None else None,
+    )
+    if label_mode == "nasa":
+        class_names = ["non-planet", "candidate", "planet"]
+    else:
+        class_names = ["non-planet", "planet"]
+    logger.info(
+        "Mission %s: %d samples, %d features after leak removal (label_mode=%s)",
+        mission_key,
+        len(features),
+        features.shape[1],
+        label_mode,
+    )
+    return MissionDataset(
+        mission=mission_key,
+        features=features,
+        labels=labels,
+        metadata=metadata,
+        label_mode=label_mode,
+        class_names=list(class_names),
+    )
 
 
 def combine_datasets(datasets: Iterable[MissionDataset]) -> MissionDataset:
@@ -349,13 +406,27 @@ def combine_datasets(datasets: Iterable[MissionDataset]) -> MissionDataset:
     combined_metadata = pd.concat([dataset.metadata for dataset in datasets], axis=0, sort=False)
     combined_metadata["mission"] = combined_metadata["mission"].astype(str)
     tag = "+".join(sorted(set(missions)))
-    return MissionDataset(mission=tag, features=combined_features, labels=combined_labels, metadata=combined_metadata)
+    label_modes = {dataset.label_mode for dataset in datasets}
+    if len(label_modes) != 1:
+        raise ValueError("All datasets must share the same label_mode to combine.")
+    label_mode = label_modes.pop()
+    class_names = datasets[0].class_names if datasets else []
+    return MissionDataset(
+        mission=tag,
+        features=combined_features,
+        labels=combined_labels,
+        metadata=combined_metadata,
+        label_mode=label_mode,
+        class_names=list(class_names),
+    )
 
 
 def load_cross_mission_split(
     test_mission: str,
     data_dir: Path,
     logger: Optional[logging.Logger] = None,
+    *,
+    label_mode: str = "binary",
 ) -> Tuple[MissionDataset, MissionDataset]:
     logger = logger or logging.getLogger(__name__)
     missions = set(MISSION_FILES.keys())
@@ -363,8 +434,11 @@ def load_cross_mission_split(
     if test_key not in missions:
         raise ValueError(f"Unknown test mission '{test_mission}'.")
     train_keys = sorted(missions - {test_key})
-    train_datasets = [load_mission_dataset(mission, data_dir, logger) for mission in train_keys]
-    test_dataset = load_mission_dataset(test_key, data_dir, logger)
+    train_datasets = [
+        load_mission_dataset(mission, data_dir, logger, label_mode=label_mode)
+        for mission in train_keys
+    ]
+    test_dataset = load_mission_dataset(test_key, data_dir, logger, label_mode=label_mode)
     train_dataset = combine_datasets(train_datasets)
     return train_dataset, test_dataset
 
@@ -420,8 +494,10 @@ def load_mission_df(
     mission: str,
     data_dir: Path,
     logger: Optional[logging.Logger] = None,
+    *,
+    label_mode: str = "binary",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Return mission features and metadata data frames."""
 
-    dataset = load_mission_dataset(mission, data_dir, logger)
+    dataset = load_mission_dataset(mission, data_dir, logger, label_mode=label_mode)
     return dataset.features.copy(), dataset.metadata.copy()
